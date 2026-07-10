@@ -1,4 +1,5 @@
 open Cmdliner;
+open Ppx_yojson_conv_lib.Yojson_conv;
 
 /* Read from stdin or file depending on argument */
 let read_input = path => {
@@ -21,6 +22,109 @@ let run_hazel = path => {
   let parsed = parse_program(program);
   let evaluated = Run.evaluate(parsed);
   print_endline(Print.print(evaluated));
+};
+
+[@deriving yojson]
+type batch_input_item = {
+  id: string,
+  source: string,
+  input_int_list: option(list(int)),
+};
+
+[@deriving yojson]
+type batch_output_item = {
+  id: string,
+  parse_eval_ns: float,
+  eval_only_ns: float,
+  iterations: int,
+  status: string,
+  error: string,
+};
+
+let now_ms = () =>
+  Js_of_ocaml.Js.Unsafe.global##.performance##now()##valueOf
+  |> Js_of_ocaml.Js.float_of_number;
+
+let load_batch_input = (path: string): list(batch_input_item) => {
+  switch (Yojson.Safe.from_file(path)) {
+  | `List(items) =>
+    items |> List.mapi((_i, item) => batch_input_item_of_yojson(item))
+  | _ => failwith("eval-batch: input must be a JSON list")
+  };
+};
+
+let hazel_input_placeholder_name = "hazel_input_random_list";
+
+module Fresh = Language.IdTagged.FreshGrammar;
+
+let int_list_exp = (ints: list(int)): Language.Exp.t =>
+  Fresh.Exp.list_lit(
+    ints |> List.map(i => Fresh.Exp.big_int(Bigint.of_int(i)))
+  );
+
+let inject_input_list = (parsed: Language.Exp.t, ints: list(int)): Language.Exp.t => {
+  let replacement = int_list_exp(ints);
+  Language.Exp.map_term(
+    ~f_exp=(continue, exp) =>
+      switch (Language.Exp.term_of(exp)) {
+      | Var(name) when name == hazel_input_placeholder_name => replacement
+      | _ => continue(exp)
+      },
+    parsed,
+  );
+};
+
+let parse_program_for_item = (item: batch_input_item): Language.Exp.t => {
+  let parsed = parse_program(item.source);
+  switch (item.input_int_list) {
+  | None => parsed
+  | Some(ints) => inject_input_list(parsed, ints)
+  };
+};
+
+let write_text = (output: option(string), text: string): unit => {
+  switch (output) {
+  | None => print_endline(text)
+  | Some(path) =>
+    let oc = open_out(path);
+    output_string(oc, text);
+    output_char(oc, '\n');
+    close_out(oc);
+  };
+};
+
+let run_eval_batch = (input_path: string, output: option(string)): unit => {
+  let items = load_batch_input(input_path);
+
+  let results =
+    List.map(
+      item => {
+        let t0 = now_ms();
+        let parsed = parse_program_for_item(item);
+        ignore(Run.evaluate(parsed));
+        let t1 = now_ms();
+        let parse_eval_ns = (t1 -. t0) *. 1000000.;
+
+        let parsed_once = parse_program_for_item(item);
+        let t2 = now_ms();
+        ignore(Run.evaluate(parsed_once));
+        let t3 = now_ms();
+        let eval_only_ns = (t3 -. t2) *. 1000000.;
+
+        {
+          id: item.id,
+          parse_eval_ns,
+          eval_only_ns,
+          iterations: 1,
+          status: "ok",
+          error: "",
+        };
+      },
+      items
+    );
+
+  let json = `List(List.map(yojson_of_batch_output_item, results));
+  write_text(output, Yojson.Safe.pretty_to_string(json));
 };
 
 let strip_leading_whitespace = (s: string): string => {
@@ -790,6 +894,21 @@ let bench_parse_cmd = {
   Cmd.v(info, Term.(const(bench_parse) $ iterations_arg $ files_arg));
 };
 
+let eval_batch_cmd = {
+  let doc =
+    "Batch-evaluate multiple Hazel programs and emit JSON timing records. "
+    ++ "Each input item is an object with fields {id, source}.";
+  let input_arg = {
+    let doc = "Path to JSON file containing [{id, source}, ...].";
+    Arg.(required & pos(0, some(string), None) & info([], ~docv="INPUT", ~doc));
+  };
+  let info = Cmd.info("eval-batch", ~doc);
+  Cmd.v(
+    info,
+    Term.(const(run_eval_batch) $ input_arg $ output_arg),
+  );
+};
+
 /* Default to help if no subcommand is given */
 let default_cmd = {
   let doc = "CLI tool for running and analyzing Hazel programs.";
@@ -805,6 +924,7 @@ let default_cmd = {
       grade_json_cmd,
       grade_report_cmd,
       bench_parse_cmd,
+      eval_batch_cmd,
       slide_list_cmd,
       slide_decode_cmd,
       slide_encode_cmd,
