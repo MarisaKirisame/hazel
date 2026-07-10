@@ -14,7 +14,7 @@ let elaborate = (exp: Exp.t): Exp.t => snd(statics_and_elab(exp));
 
 let evaluate_elaborated = (exp: Exp.t): Exp.t => {
   let (result, _) =
-    Evaluator.evaluate(~env=Builtins.env_init, exp);
+    Evaluator.evaluate(~env=Builtins.env_init, ~finalize=false, exp);
   result;
 };
 

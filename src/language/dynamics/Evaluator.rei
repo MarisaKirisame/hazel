@@ -11,6 +11,7 @@ let evaluate:
     ~prev: IncrEval.t=?,
     ~info_map: EvalInfoMap.t=?,
     ~env: Environment.t(Exp.t),
+    ~finalize: bool=?,
     Exp.t
   ) =>
   (Exp.t, EvaluatorState.t);
@@ -23,6 +24,7 @@ let evaluate_and_limit:
     ~info_map: EvalInfoMap.t=?,
     ~env: Environment.t(Exp.t),
     ~reuse_map: IncrEval.reuse_map=?,
+    ~finalize: bool=?,
     Exp.t
   ) =>
   step_constrained((Exp.t, EvaluatorState.t));

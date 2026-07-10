@@ -375,6 +375,7 @@ let evaluate_and_limit =
       ~info_map: EvalInfoMap.t=EvalInfoMap.empty,
       ~env,
       ~reuse_map: IncrEval.reuse_map=IncrEval.clean_reuse_map_of_env(env),
+      ~finalize=true,
       d: DHExp.t,
     )
     : step_constrained((Exp.t, EvaluatorState.t)) => {
@@ -384,7 +385,9 @@ let evaluate_and_limit =
   let result = Trampoline.run(~step_limit?, result);
   switch (result) {
   | Completed((_, _, x)) =>
-    Completed((x |> Substitution.in_exp(env) |> Exp.replace_all_ids, state^))
+    let x =
+      finalize ? x |> Substitution.in_exp(env) |> Exp.replace_all_ids : x;
+    Completed((x, state^))
   | StepLimitExceeded => StepLimitExceeded
   };
 };
@@ -395,10 +398,11 @@ let evaluate =
       ~prev: IncrEval.t=IncrEval.empty,
       ~info_map: EvalInfoMap.t=EvalInfoMap.empty,
       ~env,
+      ~finalize=true,
       d: DHExp.t,
     )
     : (Exp.t, EvaluatorState.t) =>
-  switch (evaluate_and_limit(~targets, ~prev, ~info_map, ~env, d)) {
+  switch (evaluate_and_limit(~targets, ~prev, ~info_map, ~env, ~finalize, d)) {
   | Completed(x) => x
   | StepLimitExceeded =>
     raise(Failure("Impossible: Step limit exceeded when not set"))
