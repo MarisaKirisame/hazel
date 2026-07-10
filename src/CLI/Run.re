@@ -12,10 +12,14 @@ let statics_of = (exp: Exp.t): Statics.Map.t => fst(statics_and_elab(exp));
 
 let elaborate = (exp: Exp.t): Exp.t => snd(statics_and_elab(exp));
 
-let evaluate = (exp: Exp.t): Exp.t => {
+let evaluate_elaborated = (exp: Exp.t): Exp.t => {
   let (result, _) =
-    Evaluator.evaluate(~env=Builtins.env_init, elaborate(exp));
+    Evaluator.evaluate(~env=Builtins.env_init, exp);
   result;
+};
+
+let evaluate = (exp: Exp.t): Exp.t => {
+  evaluate_elaborated(elaborate(exp));
 };
 
 let evaluate_incremental =

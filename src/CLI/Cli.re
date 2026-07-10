@@ -105,9 +105,10 @@ let run_eval_batch = (input_path: string, output: option(string)): unit => {
         let t1 = now_ms();
         let parse_eval_ns = (t1 -. t0) *. 1000000.;
 
-        let parsed_once = parse_program_for_item(item);
+        let elaborated_once =
+          parse_program_for_item(item) |> Run.elaborate;
         let t2 = now_ms();
-        ignore(Run.evaluate(parsed_once));
+        ignore(Run.evaluate_elaborated(elaborated_once));
         let t3 = now_ms();
         let eval_only_ns = (t3 -. t2) *. 1000000.;
 
